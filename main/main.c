@@ -8,6 +8,7 @@
 #include "esp_event.h"
 #include "esp_system.h"
 #include "esp_log.h"
+#include "freertos/idf_additions.h"
 #include "freertos/projdefs.h"
 #include "nvs_flash.h"
 #include "lwip/err.h"
@@ -26,6 +27,16 @@ esp_mqtt_client_handle_t mqttClient;
 EventGroupHandle_t s_wifi_event_group;
 static int retry_num = 0;
 int isConnected = 0;
+void mqtt_publish(void *pvParams){
+    char data[20];
+    while(1){
+        sprintf(data, "Hello there");
+        int msg_id = esp_mqtt_client_publish(mqttClient, "esp32/greet", data, 0, 0, 0);
+        if(msg_id == 0) ESP_LOGI(MQTT_TAG, "Data sent");
+        else ESP_LOGI(MQTT_TAG, "Failed to send data");
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+}
 static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void * event_data){
     if(event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START){
         esp_wifi_connect();
@@ -89,6 +100,8 @@ static void mqtt_event_handler(void *args, esp_event_base_t base, int32_t event_
             ESP_LOGI(MQTT_TAG, "Connected to broker!");
             msg_id = esp_mqtt_client_subscribe(client, "hello/world", 0);
             ESP_LOGI(MQTT_TAG, "Sent sub successfully, msq_id=%d",msg_id);
+            xTaskCreate(mqtt_publish,"Mqtt Publish", 4096, NULL, 5, NULL);
+        break;
         case MQTT_EVENT_DISCONNECTED:
         break;
         case MQTT_EVENT_SUBSCRIBED:
@@ -96,6 +109,9 @@ static void mqtt_event_handler(void *args, esp_event_base_t base, int32_t event_
         case MQTT_EVENT_UNSUBSCRIBED:
         break;
         case MQTT_EVENT_DATA:
+            ESP_LOGI(MQTT_TAG, "Received data!");
+            printf("topic=%.*s\r\n",event->topic_len, event->topic);
+            printf("data=%.*s\r\n",event->data_len,event->data);
         break;
         case MQTT_EVENT_PUBLISHED:
         break;
@@ -127,6 +143,7 @@ static void mqtt_start(){
     esp_mqtt_client_register_event(client, ESP_EVENT_ANY_ID, mqtt_event_handler,NULL);
     esp_mqtt_client_start(client);
 }
+
 void app_main(void)
 {
     esp_err_t ret = nvs_flash_init();
